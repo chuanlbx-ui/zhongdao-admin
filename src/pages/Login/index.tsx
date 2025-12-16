@@ -32,29 +32,26 @@ export default function LoginPage() {
       } catch (err: any) {
         apiError = err
         console.error('API登录错误:', err)
-        
-        // 如果后端返回401（未认证）或其他错误，显示具体信息
-        if (err?.response?.status === 500) {
-          message.error('服务器错误 (500)，后端服务可能未启动或登录接口未实现')
-          return
-        }
-      }
-      
-      if (!token) {
-        // 尝试本地登录模式（开发环境）
-        if (values.username === 'admin' && values.password === 'admin123456') {
-          token = `mock_token_${Date.now()}`
-          adminData = {
-            id: 'admin_001',
-            username: 'admin',
-            email: 'admin@zhongdao.com',
-            role: 'SUPER_ADMIN'
-          }
-          message.info('已使用本地登录模式（后端服务未可用）')
+
+        // 显示详细的错误信息
+        if (err?.response) {
+          console.error('错误响应:', {
+            status: err.response.status,
+            data: err.response.data,
+            headers: err.response.headers
+          })
+          message.error(`登录失败 (${err.response.status}): ${err.response.data?.message || '服务器错误'}`)
+        } else if (err?.request) {
+          message.error('无法连接到服务器，请检查后端服务是否运行在 http://localhost:3000')
         } else {
-          message.error(apiError?.message || '登录失败：无效的用户名或密码')
-          return
+          message.error(`登录失败: ${err.message}`)
         }
+        return
+      }
+  
+      if (!token) {
+        message.error('登录失败：无效的用户名或密码')
+        return
       }
       
       setToken(String(token))

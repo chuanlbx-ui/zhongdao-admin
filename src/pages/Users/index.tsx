@@ -99,73 +99,101 @@ export default function Users() {
   const fetchUsers = async (page = 1, pageSize = 20) => {
     setLoading(true)
     try {
-      // 调试信息：检查当前权限状态
-      const currentPermission = usePermission()
-      console.log('当前用户角色:', currentPermission.role)
-      console.log('当前用户权限:', currentPermission.features)
-      console.log('用户菜单权限:', currentPermission.menus)
-      
-      // 检查是否有用户管理权限
-      if (!currentPermission.hasMenu('users')) {
-        console.warn('当前用户没有用户管理菜单权限')
-        message.warning('您没有用户管理权限，请联系系统管理员')
-        setUsers([])
-        setFilteredUsers([])
-        setPagination({ current: 1, pageSize: 20, total: 0 })
-        return
-      }
-      
       // 从后端API加载用户列表
       const response = await adminUserApi.getList({
         page,
-        limit: pageSize,
+        perPage: pageSize,
         search: searchText || undefined,
         level: filterLevel || undefined,
         sort: `${sortField}:${sortOrder === 'descend' ? -1 : 1}`,
       })
 
-      // 处理API响应
-      const data = response?.data?.items || response?.items || response || []
-      const total = response?.data?.total || response?.total || data.length
+      console.log('API响应:', response)
+
+      // 处理API响应 - 兼容多种响应格式
+      let data = []
+      let total = 0
+
+      if (response?.success && response?.data) {
+        // 标准响应格式: { success: true, data: { items: [...], total: 100 } }
+        data = response.data.items || []
+        total = response.data.total || 0
+      } else if (response?.items) {
+        // 直接包含items的格式: { items: [...], total: 100 }
+        data = response.items || []
+        total = response.total || 0
+      } else if (Array.isArray(response)) {
+        // 直接返回数组的格式: [...]
+        data = response || []
+        total = data.length
+      } else if (response?.data && Array.isArray(response.data)) {
+        // data是数组的格式: { data: [...] }
+        data = response.data || []
+        total = data.length
+      } else {
+        console.warn('未知的响应格式:', response)
+        data = []
+        total = 0
+      }
 
       // 格式化用户数据
       const formattedUsers = (Array.isArray(data) ? data : []).map((user: any) => ({
         id: user.id,
         nickname: user.nickname || '未知',
         phone: user.phone || '-',
-        level: user.level || 'VIP',
+        level: user.level || 'NORMAL',
         openid: user.openid,
         createdAt: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-',
         pointsBalance: user.pointsBalance || 0,
+        status: user.status || 'ACTIVE',
         ...user,
       }))
+
+      console.log('格式化后的用户数据:', formattedUsers)
 
       setUsers(formattedUsers)
       setFilteredUsers(formattedUsers)
       setPagination({ current: page, pageSize, total })
     } catch (error: any) {
       console.error('加载用户列表失败:', error)
-      
-      // 处理403权限错误
-      if (error?.status === 403) {
-        message.error('权限不足：需要管理员权限才能访问用户管理功能')
-        // 可以尝试重新登录或获取更高权限
-        console.warn('尝试使用超级管理员权限重新访问')
-        // 临时提升权限（开发环境）
-        localStorage.setItem('user_role', 'super_admin')
-        // 可以在这里添加重新获取数据的逻辑
-      } else if (error?.status !== 401) {
-        // 网络错误时显示提示，但使用模拟数据继续
-        message.warning('暂无法连接后端服务，正在使用模拟数据')
+
+      // 使用API客户端提供的模拟数据
+      const mockResponse = await adminUserApi.getList({
+        page,
+        perPage: pageSize,
+        search: searchText || undefined,
+        level: filterLevel || undefined,
+      })
+
+      if (mockResponse?.data?.items) {
+        const formattedUsers = mockResponse.data.items.map((user: any) => ({
+          id: user.id,
+          nickname: user.nickname || '未知',
+          phone: user.phone || '-',
+          level: user.level || 'NORMAL',
+          openid: user.openid,
+          createdAt: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '-',
+          pointsBalance: user.pointsBalance || 0,
+          status: user.status || 'ACTIVE',
+          ...user,
+        }))
+
+        setUsers(formattedUsers)
+        setFilteredUsers(formattedUsers)
+        setPagination({
+          current: page,
+          pageSize,
+          total: mockResponse.data.total || formattedUsers.length
+        })
+
+        message.info('当前使用模拟数据，请检查后端服务连接')
       } else {
-        console.warn('需要有效的认证Token，请先登录')
-        // 401错误会由API拦截器处理，跳转到登录页
+        // 设置空数据以避免页面崩溃
+        setUsers([])
+        setFilteredUsers([])
+        setPagination({ current: 1, pageSize: 20, total: 0 })
+        message.error('无法加载用户数据')
       }
-      
-      // 设置空数据以避免页面崩溃
-      setUsers([])
-      setFilteredUsers([])
-      setPagination({ current: 1, pageSize: 20, total: 0 })
     } finally {
       setLoading(false)
     }
@@ -636,7 +664,10 @@ export default function Users() {
               prefix={<SearchOutlined />}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              onPressEnter={() => fetchUsers(1, pagination.pageSize)}
+              onPressEnter={() => {
+                setSearchText(searchInput)
+                fetchUsers(1, pagination.pageSize)
+              }}
               allowClear
             />
           </Col>

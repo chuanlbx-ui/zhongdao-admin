@@ -1,24 +1,20 @@
 ﻿﻿﻿﻿﻿﻿import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
 
+// 使用相对路径，让Vite代理处理
 // @ts-ignore
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:3000/api/v1'
+const API_BASE_URL = '/api/v1'
 
 class CacheManager {
   private cache: Map<string, any> = new Map()
-  private ttl: number = 5 * 60 * 1000
+  private ttl: number = 0 // 缓存时间设为0，禁用缓存以便调试
 
   set(key: string, value: any) {
     this.cache.set(key, { value, timestamp: Date.now() })
   }
 
   get(key: string) {
-    const item = this.cache.get(key)
-    if (!item) return null
-    if (Date.now() - item.timestamp > this.ttl) {
-      this.cache.delete(key)
-      return null
-    }
-    return item.value
+    // 禁用缓存，总是返回null
+    return null
   }
 
   clear() {
@@ -132,28 +128,70 @@ export const adminUserApi = {
     if (cached) return cached
 
     try {
-      const response = await adminApiClient.get('/admin/users', { params })
-      const result = response.data || response
-      cacheManager.set(cacheKey, result)
-      return result
+      // 尝试调用实际的API
+      const response = await adminApiClient.get('/users', { params })
+      console.log('✅ API调用成功 - Raw Response:', response)
+
+      // 如果API返回了真实数据，直接返回
+      if (response && (response.items || response.data?.items || response.data || Array.isArray(response))) {
+        return response
+      }
+
+      // 如果API返回空数据，提示用户
+      if (response && response.success === false) {
+        console.warn('API返回错误，将使用模拟数据')
+        throw new Error(response.error?.message || 'API返回错误')
+      }
+
+      cacheManager.set(cacheKey, response)
+      return response
     } catch (error) {
       console.error('User list error:', error)
-      // 返回模拟数据以支持离线开发
+
+      // 根据参数生成更真实的模拟数据
+      const page = params?.page || 1
+      const perPage = params?.perPage || params?.limit || 20
+      const search = params?.search || ''
+      const level = params?.level
+
+      let mockUsers = [
+        { id: 'cm001', nickname: '张三', phone: '13800138001', level: 'VIP', status: 'ACTIVE', openid: 'openid1', createdAt: '2024-01-01', pointsBalance: 1500 },
+        { id: 'cm002', nickname: '李四', phone: '13800138002', level: 'STAR_1', status: 'ACTIVE', openid: 'openid2', createdAt: '2024-01-02', pointsBalance: 3200 },
+        { id: 'cm003', nickname: '王五', phone: '13800138003', level: 'STAR_2', status: 'ACTIVE', openid: 'openid3', createdAt: '2024-01-03', pointsBalance: 8500 },
+        { id: 'cm004', nickname: '赵六', phone: '13800138004', level: 'STAR_3', status: 'ACTIVE', openid: 'openid4', createdAt: '2024-01-04', pointsBalance: 15000 },
+        { id: 'cm005', nickname: '钱七', phone: '13800138005', level: 'NORMAL', status: 'ACTIVE', openid: 'openid5', createdAt: '2024-01-05', pointsBalance: 200 },
+        { id: 'cm006', nickname: '孙八', phone: '13800138006', level: 'VIP', status: 'ACTIVE', openid: 'openid6', createdAt: '2024-01-06', pointsBalance: 900 },
+        { id: 'cm007', nickname: '周九', phone: '13800138007', level: 'STAR_1', status: 'ACTIVE', openid: 'openid7', createdAt: '2024-01-07', pointsBalance: 2800 },
+        { id: 'cm008', nickname: '吴十', phone: '13800138008', level: 'DIRECTOR', status: 'ACTIVE', openid: 'openid8', createdAt: '2024-01-08', pointsBalance: 50000 },
+      ]
+
+      // 应用搜索过滤
+      if (search) {
+        mockUsers = mockUsers.filter(u =>
+          u.nickname.includes(search) || u.phone.includes(search)
+        )
+      }
+
+      // 应用等级过滤
+      if (level) {
+        mockUsers = mockUsers.filter(u => u.level === level)
+      }
+
+      // 分页
+      const start = (page - 1) * perPage
+      const items = mockUsers.slice(start, start + perPage)
+
       const mockData = {
+        success: true,
         data: {
-          items: [
-            { id: '1', nickname: '测试用户1', phone: '13800138000', level: 'VIP', openid: 'test1', createdAt: new Date().toISOString(), pointsBalance: 100 },
-            { id: '2', nickname: '测试用户2', phone: '13800138001', level: 'STAR_1', openid: 'test2', createdAt: new Date().toISOString(), pointsBalance: 200 },
-            { id: '3', nickname: '测试用户3', phone: '13800138002', level: 'NORMAL', openid: 'test3', createdAt: new Date().toISOString(), pointsBalance: 50 },
-          ],
-          total: 3,
-          pagination: {
-            page: params?.page || 1,
-            limit: params?.limit || 20,
-            total: 3,
-          }
+          items: items,
+          total: mockUsers.length,
+          page: page,
+          perPage: perPage,
         }
       }
+
+      console.log('Using mock data:', mockData)
       return mockData
     }
   },
